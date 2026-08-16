@@ -419,12 +419,19 @@ def build_map(calendar_events):
     mapped = []
     no_location = []
     unknown = set()
+    seen = set()
 
     for ev in calendar_events:
         name = ev.get("summary", "").strip()
         start = ev.get("start", {}).get("date")
         if not name or not start:
             continue
+        # proteção extra: ignora duplicados que possam existir no calendário
+        # (ex.: entradas antigas criadas antes da correção do dedupe_events)
+        dedupe_key = (name.lower(), start, ev.get("location", "").strip().lower())
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
         loc = clean_location(ev.get("location", ""))
         if not loc:
             no_location.append({"summary": name, "start": start})
