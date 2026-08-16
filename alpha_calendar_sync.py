@@ -352,6 +352,25 @@ def sync(service, calendar_id, site_events):
 # ─── NOTIFICAÇÃO ──────────────────────────────────────────────────────────────
 
 def send_notification(created_list, changed_list, deleted_list):
+    counts = []
+    if created_list: counts.append(f"{len(created_list)} novos")
+    if changed_list: counts.append(f"{len(changed_list)} alterados")
+    if deleted_list: counts.append(f"{len(deleted_list)} removidos")
+    title = "Alpha Competitions — " + (", ".join(counts) if counts else "sem alterações no calendário")
+
+    # Expõe o resumo ao workflow do GitHub Actions (via GITHUB_ENV) para a
+    # mensagem do commit refletir o que realmente mudou — assim a Diana vê
+    # de relance, no histórico de commits ou na notificação do GitHub, se
+    # houve provas novas/alteradas/removidas nesta corrida, mesmo sem abrir
+    # os logs. Escrito sempre, mesmo quando não há alterações.
+    env_path = os.environ.get("GITHUB_ENV")
+    if env_path:
+        try:
+            with open(env_path, "a", encoding="utf-8") as f:
+                f.write(f"SYNC_SUMMARY={title}\n")
+        except Exception as e:
+            log.debug(f"Não foi possível escrever GITHUB_ENV: {e}")
+
     if not created_list and not changed_list and not deleted_list:
         return
 
@@ -368,12 +387,6 @@ def send_notification(created_list, changed_list, deleted_list):
         lines.append("Removidos:")
         lines.extend(deleted_list)
     text = "\n".join(lines)
-
-    counts = []
-    if created_list: counts.append(f"{len(created_list)} novos")
-    if changed_list: counts.append(f"{len(changed_list)} alterados")
-    if deleted_list: counts.append(f"{len(deleted_list)} removidos")
-    title = "Alpha Competitions — " + ", ".join(counts)
 
     # Notificação Windows (BurntToast) — só faz algo em Windows local; em
     # qualquer outro SO (incl. runners do GitHub Actions) falha em silêncio.

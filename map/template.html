@@ -15,7 +15,7 @@
     --ink-muted: #706d66;
     --accent: #ff8a3d;
     --accent-glow: rgba(255, 138, 61, 0.55);
-    --past: #d9c9a3;
+    --past: #9a9da6;
     --border: #2a2d36;
   }
 
@@ -63,7 +63,7 @@
   .stats b { color: var(--ink-primary); font-size: 15px; display: block; font-weight: 700; }
   .stats .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; box-sizing: border-box; }
   .dot.upcoming { background: var(--accent); box-shadow: 0 0 6px var(--accent-glow); }
-  .dot.past { background: transparent; border: 1.5px solid var(--past); }
+  .dot.past { background: var(--past); opacity: 0.62; }
 
   .body-row { display: flex; flex: 1; min-height: 0; }
 
@@ -127,10 +127,11 @@
     font-size: 11px;
   }
   .marker-dot.past {
-    background: rgba(20,22,28,0.72);
+    background: var(--past);
     box-shadow: none;
-    border: 2px solid var(--past);
-    color: var(--ink-secondary);
+    border: 1px solid var(--surface);
+    color: var(--surface);
+    opacity: 0.62;
   }
   .marker-dot.pulse::before {
     content: '';
