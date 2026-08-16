@@ -1,0 +1,40 @@
+# Segredos — nunca versionar
+credentials.json
+token.json
+
+# Ficheiros de IDs do Drive/KML (já não usados, mas por segurança)
+kml_file_id.txt
+kml_inscritas_file_id.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+env/
+ENV/
+.env
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

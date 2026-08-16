@@ -1,0 +1,60 @@
+name: Sync Alpha Competitions
+
+on:
+  schedule:
+    # Sextas-feiras às 9h de Lisboa.
+    # GitHub Actions usa sempre UTC; ajusta se Portugal mudar de fuso horário
+    # (hora de verão UTC+1 vs hora de inverno UTC+0).
+    - cron: "0 8 * * 5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpha-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Write Google credentials
+        run: |
+          printf '%s' "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+          printf '%s' "$GOOGLE_TOKEN_JSON" > token.json
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+
+      - name: Run sync + build map
+        run: python alpha_calendar_sync.py
+
+      - name: Remove credential files before commit
+        if: always()
+        run: rm -f credentials.json token.json
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "alpha-sync-bot"
+          git config user.email "actions@github.com"
+          git add index.html inscritas.txt
+          if git diff --cached --quiet; then
+            echo "Sem alterações a publicar."
+          else
+            git commit -m "Atualizar mapa e calendário Alpha [automático]"
+            git push
+          fi
