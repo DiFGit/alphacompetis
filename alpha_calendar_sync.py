@@ -232,6 +232,29 @@ def get_calendar_events(service, calendar_id):
             break
     return items
 
+def get_all_calendar_events(service, calendar_id):
+    """
+    Todos os eventos do calendário, passados e futuros — ao contrário de
+    get_calendar_events() (usada na sync, que só olha para o futuro), esta
+    função alimenta o mapa, que deve mostrar o histórico completo tal como
+    aparece no Google Calendar (a sync nunca apaga eventos passados).
+    """
+    items = []
+    page_token = None
+    while True:
+        result = service.events().list(
+            calendarId=calendar_id,
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=250,
+            pageToken=page_token,
+        ).execute()
+        items.extend(result.get("items", []))
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+    return items
+
 def format_date(d):
     if isinstance(d, str):
         try:
@@ -380,7 +403,12 @@ def clean_location(loc):
     loc = loc.strip()
     return LOCATION_FIXES.get(loc, loc)
 
-def build_map(site_events, inscritas):
+def build_map(calendar_events):
+    """
+    Gera o mapa a partir de TODOS os eventos do calendário (passados e
+    futuros) — não usa site_events porque o scraping só devolve provas
+    futuras (o site da Alpha não lista o que já passou).
+    """
     if not os.path.exists(CITY_COORDS_FILE) or not os.path.exists(MAP_TEMPLATE_FILE):
         log.warning("Ficheiros do mapa (map/city_coords.json ou map/template.html) não encontrados — a saltar geração do mapa.")
         return
@@ -392,20 +420,24 @@ def build_map(site_events, inscritas):
     no_location = []
     unknown = set()
 
-    for ev in site_events:
-        loc = clean_location(ev.get("location"))
+    for ev in calendar_events:
+        name = ev.get("summary", "").strip()
+        start = ev.get("start", {}).get("date")
+        if not name or not start:
+            continue
+        loc = clean_location(ev.get("location", ""))
         if not loc:
-            no_location.append({"summary": ev["name"], "start": ev["start"].isoformat()})
+            no_location.append({"summary": name, "start": start})
             continue
         coords = coords_table.get(loc)
         if coords is None:
             unknown.add(loc)
-            no_location.append({"summary": ev["name"], "start": ev["start"].isoformat()})
+            no_location.append({"summary": name, "start": start})
             continue
         mapped.append({
-            "summary": ev["name"],
+            "summary": name,
             "location": loc,
-            "start": ev["start"].isoformat(),
+            "start": start,
             "lat": coords[0],
             "lon": coords[1],
         })
@@ -436,8 +468,8 @@ def main():
     site_events = scrape_events()
     sync(service, calendar_id, site_events)
 
-    inscritas = load_inscritas()
-    build_map(site_events, inscritas)
+    all_events = get_all_calendar_events(service, calendar_id)
+    build_map(all_events)
 
 if __name__ == "__main__":
     main()
