@@ -55,6 +55,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "Sem alterações a publicar."
           else
-            git commit -m "Atualizar mapa e calendário Alpha [automático]"
+            git commit -m "${SYNC_SUMMARY:-Atualizar mapa e calendário Alpha} [automático]"
             git push
           fi
