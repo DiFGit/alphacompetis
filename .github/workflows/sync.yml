@@ -58,3 +58,17 @@ jobs:
             git commit -m "${SYNC_SUMMARY:-Atualizar mapa e calendário Alpha} [automático]"
             git push
           fi
+
+      - name: Send push notification (ntfy.sh)
+        if: always()
+        run: |
+          payload=$(jq -n \
+            --arg topic "$NTFY_TOPIC" \
+            --arg title "${SYNC_SUMMARY:-Alpha Competitions}" \
+            --arg message "${SYNC_DETAIL:-Corrida terminada.}" \
+            '{topic: $topic, title: $title, message: $message}')
+          curl -s -H "Content-Type: application/json" -d "$payload" "https://ntfy.sh/"
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          SYNC_SUMMARY: ${{ env.SYNC_SUMMARY }}
+          SYNC_DETAIL: ${{ env.SYNC_DETAIL }}

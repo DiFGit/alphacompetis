@@ -51,6 +51,20 @@ LOCATION_FIXES = {
     "GURUTZETA (SPAIN)": "GALDAKAO (SPAIN)",
 }
 
+# Provas sem localização que a Diana confirmou terem sido adicionadas por
+# engano ao calendário — excluídas por completo do mapa (não aparecem nem no
+# mapa nem na nota "sem localização"), mas mantidas no Google Calendar.
+MAP_EXCLUDE = {
+    "ES Online QL Crossfit Semifinals 2026 & MAD Fitness Festival",
+    "ES February Challenge Léon",
+    "IRL Battle Cancer Dublin",
+}
+
+# Renomeações a aplicar ao nome da prova antes de mostrar no mapa/nota.
+MAP_RENAME = {
+    "NL Masters & Teens Throwdown": "The Masters & Teens Throwdown",
+}
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
@@ -176,7 +190,12 @@ def scrape_events():
         if sibling:
             strongs = sibling.find_all("strong")
             if len(strongs) >= 2:
-                date_text, location = strongs[0].get_text(strip=True), strongs[1].get_text(strip=True)
+                # A localização é sempre o último fragmento <strong>. O site da
+                # Alpha ocasionalmente tem fragmentos extra a meio (ex.: "Swiss
+                # Throwdown" tinha 3 <strong> em vez de 2 — verificado em
+                # 18/08/2026) — usar sempre o último evita apanhar lixo como
+                # localização.
+                date_text, location = strongs[0].get_text(strip=True), strongs[-1].get_text(strip=True)
             elif len(strongs) == 1:
                 date_text = strongs[0].get_text(strip=True)
         if not date_text:
@@ -358,22 +377,6 @@ def send_notification(created_list, changed_list, deleted_list):
     if deleted_list: counts.append(f"{len(deleted_list)} removidos")
     title = "Alpha Competitions — " + (", ".join(counts) if counts else "sem alterações no calendário")
 
-    # Expõe o resumo ao workflow do GitHub Actions (via GITHUB_ENV) para a
-    # mensagem do commit refletir o que realmente mudou — assim a Diana vê
-    # de relance, no histórico de commits ou na notificação do GitHub, se
-    # houve provas novas/alteradas/removidas nesta corrida, mesmo sem abrir
-    # os logs. Escrito sempre, mesmo quando não há alterações.
-    env_path = os.environ.get("GITHUB_ENV")
-    if env_path:
-        try:
-            with open(env_path, "a", encoding="utf-8") as f:
-                f.write(f"SYNC_SUMMARY={title}\n")
-        except Exception as e:
-            log.debug(f"Não foi possível escrever GITHUB_ENV: {e}")
-
-    if not created_list and not changed_list and not deleted_list:
-        return
-
     lines = []
     if created_list:
         lines.append("Novos:")
@@ -386,7 +389,26 @@ def send_notification(created_list, changed_list, deleted_list):
         if lines: lines.append("")
         lines.append("Removidos:")
         lines.extend(deleted_list)
-    text = "\n".join(lines)
+    text = "\n".join(lines) if lines else "Sem alterações no calendário desta corrida."
+
+    # Expõe o resumo (título curto) e o detalhe (lista completa) ao workflow
+    # do GitHub Actions via GITHUB_ENV — usados na mensagem do commit e numa
+    # notificação push única e consolidada por corrida (ntfy.sh), para a
+    # Diana ver de relance o que mudou sem abrir emails nem logs. Escrito
+    # sempre, mesmo quando não há alterações.
+    env_path = os.environ.get("GITHUB_ENV")
+    if env_path:
+        try:
+            with open(env_path, "a", encoding="utf-8") as f:
+                f.write(f"SYNC_SUMMARY={title}\n")
+                f.write("SYNC_DETAIL<<__SYNC_DETAIL_EOF__\n")
+                f.write(text + "\n")
+                f.write("__SYNC_DETAIL_EOF__\n")
+        except Exception as e:
+            log.debug(f"Não foi possível escrever GITHUB_ENV: {e}")
+
+    if not created_list and not changed_list and not deleted_list:
+        return
 
     # Notificação Windows (BurntToast) — só faz algo em Windows local; em
     # qualquer outro SO (incl. runners do GitHub Actions) falha em silêncio.
@@ -439,6 +461,9 @@ def build_map(calendar_events):
         start = ev.get("start", {}).get("date")
         if not name or not start:
             continue
+        if name in MAP_EXCLUDE:
+            continue
+        name = MAP_RENAME.get(name, name)
         # proteção extra: ignora duplicados que possam existir no calendário
         # (ex.: entradas antigas criadas antes da correção do dedupe_events)
         dedupe_key = (name.lower(), start, ev.get("location", "").strip().lower())

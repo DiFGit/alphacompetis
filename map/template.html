@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt-PT">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mapa Alpha Competitions</title>
+<title>Alpha Competitions Map</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -201,18 +201,30 @@
     color: var(--ink-muted) !important;
   }
   .leaflet-control-attribution a { color: var(--ink-secondary) !important; }
+
+  .body-row { position: relative; }
+  .list-toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 2147483647;
+    background: var(--surface-raised); color: var(--ink-secondary);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: inherit; font-size: 11px; padding: 6px 10px; cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.45);
+  }
+  .list-toggle:hover { color: var(--ink-primary); border-color: var(--ink-muted); }
+  #app.hide-sidebar #sidebar { display: none; }
+  #app.hide-chrome header { display: none; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <div>
-      <h1>Calendário Alpha Competitions</h1>
+      <h1 id="pageTitle">Alpha Competitions Calendar</h1>
       <div class="meta" id="subtitle"></div>
     </div>
     <div class="stats">
-      <div><b id="statUpcoming">0</b><span class="dot upcoming"></span>por vir</div>
-      <div><b id="statPast">0</b><span class="dot past"></span>já realizadas</div>
+      <div><b id="statUpcoming">0</b><span class="dot upcoming"></span><span id="lblUpcoming">upcoming</span></div>
+      <div><b id="statPast">0</b><span class="dot past"></span><span id="lblPast">completed</span></div>
     </div>
     <div class="meta" id="updated"></div>
   </header>
@@ -229,13 +241,42 @@ const NO_LOCATION = __NO_LOCATION_JSON__;
 const LAST_UPDATED = "__LAST_UPDATED__";
 const TODAY = new Date("__TODAY_ISO__");
 
-document.getElementById('subtitle').textContent = EVENTS.length + ' provas com localização';
-document.getElementById('updated').textContent = 'Atualizado em ' + LAST_UPDATED;
+const params = new URLSearchParams(location.search);
+const embedFlag = params.get('embed') === '1' || window.ALPHA_MAP_EMBED === true;
+if (embedFlag) {
+  document.getElementById('app').classList.add('hide-sidebar', 'hide-chrome');
+}
+
+// The map is always in English — both embedded (client-facing) contexts
+// and the personal/standalone map, since the personal map's link may also
+// be shared directly.
+const LOCALE = 'en-GB';
+const T = { title: 'Alpha Competitions Calendar', upcoming: 'upcoming', past: 'completed',
+    subtitle: n => n + ' events with location', updated: s => 'Updated on ' + s,
+    noLoc: n => n + ' event(s) on the calendar with no location: ',
+    next: 'next', showList: 'Show list', hideList: 'Hide list' };
+
+document.getElementById('pageTitle').textContent = T.title;
+document.getElementById('lblUpcoming').textContent = T.upcoming;
+document.getElementById('lblPast').textContent = T.past;
+
+const toggleBtn = document.createElement('button');
+toggleBtn.className = 'list-toggle';
+toggleBtn.textContent = embedFlag ? T.showList : T.hideList;
+toggleBtn.addEventListener('click', () => {
+  const hidden = document.getElementById('app').classList.toggle('hide-sidebar');
+  toggleBtn.textContent = hidden ? T.showList : T.hideList;
+  setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 220);
+});
+document.querySelector('.body-row').appendChild(toggleBtn);
+
+
+document.getElementById('subtitle').textContent = T.subtitle(EVENTS.length);
+document.getElementById('updated').textContent = T.updated(LAST_UPDATED);
 
 if (NO_LOCATION.length) {
   document.getElementById('noLocNote').textContent =
-    NO_LOCATION.length + ' prova(s) sem localização no calendário: ' +
-    NO_LOCATION.map(e => e.summary).join(', ');
+    T.noLoc(NO_LOCATION.length) + NO_LOCATION.map(e => e.summary).join(', ');
 } else {
   document.getElementById('noLocNote').style.display = 'none';
 }
@@ -243,11 +284,11 @@ if (NO_LOCATION.length) {
 function isPast(iso) { return new Date(iso) < TODAY; }
 function fmtDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  return d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'short', timeZone: 'UTC' });
 }
 function monthLabel(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return d.toLocaleDateString(LOCALE, { month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 document.getElementById('statUpcoming').textContent = EVENTS.filter(e => !isPast(e.start)).length;
@@ -296,7 +337,7 @@ Object.entries(groups).forEach(([key, g]) => {
     g.events.map(e => {
       const past = isPast(e.start);
       return '<div class="popup-event' + (past ? ' is-past' : '') + '">' +
-        '<div class="name">' + e.summary + (!past && e === nextEvent ? '<span class="badge">próxima</span>' : '') + '</div>' +
+        '<div class="name">' + e.summary + (!past && e === nextEvent ? '<span class="badge">' + T.next + '</span>' : '') + '</div>' +
         '<div class="date">' + fmtDate(e.start) + '</div></div>';
     }).join('');
 
