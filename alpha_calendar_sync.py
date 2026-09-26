@@ -4,8 +4,9 @@ Alpha Competition Services → Google Calendar Sync
 - Cria eventos novos futuros
 - Atualiza data/local de eventos existentes futuros
 - Remove eventos futuros que deixaram de existir no site
-- Eventos em inscritas.txt com [x] ficam cor tomate no calendário
-- Adiciona eventos novos ao inscritas.txt como [ ]
+- A cor dos eventos é inteiramente gerida pela Diana no próprio Google
+  Calendar (ex.: tomate para "inscrita") — o script nunca lê nem altera a
+  cor de um evento depois de o criar.
 - Notificação Windows com lista de novos e alterados (local) / resumo no
   GitHub Actions Step Summary (quando corre em CI)
 - Gera map/index.html (mapa mundo Leaflet) com a localização de todas as
@@ -36,8 +37,6 @@ SCOPES           = [
 ]
 TOKEN_FILE       = "token.json"
 CREDENTIALS_FILE = "credentials.json"
-INSCRITAS_FILE   = "inscritas.txt"
-COLOR_INSCRITA   = "11"  # Tomate
 
 MAP_DIR          = "map"
 CITY_COORDS_FILE = os.path.join(MAP_DIR, "city_coords.json")
@@ -94,40 +93,6 @@ def get_or_create_calendar(service, name):
     log.info(f"Calendário criado: '{name}' (id: {new_cal['id']})")
     return new_cal["id"]
 
-# ─── INSCRITAS ────────────────────────────────────────────────────────────────
-
-def load_inscritas():
-    if not os.path.exists(INSCRITAS_FILE):
-        return set()
-    inscritas = set()
-    with open(INSCRITAS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line.lower().startswith("[x]"):
-                inscritas.add(line[3:].strip().lower())
-    return inscritas
-
-def add_to_inscritas(names):
-    existing = set()
-    lines = []
-    if os.path.exists(INSCRITAS_FILE):
-        with open(INSCRITAS_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        for line in lines:
-            s = line.strip()
-            if s.startswith("[ ]") or s.lower().startswith("[x]"):
-                existing.add(s[3:].strip().lower())
-    new_lines = [f"[ ] {n}\n" for n in names if n.lower() not in existing]
-    if new_lines:
-        with open(INSCRITAS_FILE, "a", encoding="utf-8") as f:
-            if lines and not lines[-1].endswith("\n"):
-                f.write("\n")
-            f.writelines(new_lines)
-        log.info(f"  {len(new_lines)} evento(s) adicionado(s) ao inscritas.txt")
-
-def is_inscrita(name, inscritas):
-    name_lower = name.lower()
-    return any(isinstance(i, str) and (i in name_lower or name_lower in i) for i in inscritas)
 
 # ─── SCRAPING ─────────────────────────────────────────────────────────────────
 
@@ -285,12 +250,10 @@ def format_date(d):
 # ─── SINCRONIZAÇÃO ────────────────────────────────────────────────────────────
 
 def sync(service, calendar_id, site_events):
-    inscritas    = load_inscritas()
     cal_events   = get_calendar_events(service, calendar_id)
     created_list = []
     changed_list = []
     deleted_list = []
-    new_names    = []
 
     cal_by_key = {}
     for ev in cal_events:
@@ -306,7 +269,6 @@ def sync(service, calendar_id, site_events):
 
     for ev in site_events:
         key      = f"{ev['name'].lower()}|{ev['start'].isoformat()}|{ev['location'].lower()}"
-        inscrita = is_inscrita(ev["name"], inscritas)
         existing = cal_by_key.get(key)
         body = {
             "summary":     ev["name"],
@@ -316,40 +278,27 @@ def sync(service, calendar_id, site_events):
             "end":   {"date": (ev["end"] + timedelta(days=1)).isoformat()},
         }
         if existing is None:
-            if inscrita:
-                body["colorId"] = COLOR_INSCRITA
+            # Sem colorId — a cor fica inteiramente ao critério da Diana,
+            # definida à mão no Google Calendar depois de o evento existir.
             created = service.events().insert(calendarId=calendar_id, body=body).execute()
             cal_by_key[key] = created  # evita re-criar se o site repetir esta chave no mesmo loop
             created_list.append(f"• {ev['name']} — {format_date(ev['start'])}")
-            new_names.append(ev["name"])
             log.info(f"  ✅ Criado: {ev['name']} ({ev['start']})")
         else:
             old_location = existing.get("location", "")
-            old_color    = existing.get("colorId")
             changes      = []
             if old_location != ev["location"] and ev["location"]:
                 changes.append(f"local: {old_location} → {ev['location']}")
-            color_patch = {}
-            if inscrita and old_color != COLOR_INSCRITA:
-                color_patch["colorId"] = COLOR_INSCRITA
-            elif not inscrita and old_color == COLOR_INSCRITA:
-                color_patch["colorId"] = None
-            if changes or color_patch:
-                patch_body = {}
-                if changes:
-                    patch_body["location"] = ev["location"]
-                if color_patch:
-                    patch_body["colorId"] = color_patch["colorId"]
+            if changes:
+                # Nunca inclui colorId aqui — a cor do evento nunca é tocada
+                # pelo script depois de criado, só a Diana a define/altera.
                 service.events().patch(
                     calendarId=calendar_id,
                     eventId=existing["id"],
-                    body=patch_body
+                    body={"location": ev["location"]}
                 ).execute()
-                if changes:
-                    changed_list.append(f"• {ev['name']} — {', '.join(changes)}")
-                    log.info(f"  🔄 Alterado: {ev['name']} ({', '.join(changes)})")
-                if color_patch:
-                    log.info(f"  🎨 Cor atualizada: {ev['name']}")
+                changed_list.append(f"• {ev['name']} — {', '.join(changes)}")
+                log.info(f"  🔄 Alterado: {ev['name']} ({', '.join(changes)})")
             else:
                 log.info(f"  → Sem alterações: {ev['name']}")
 
@@ -361,9 +310,6 @@ def sync(service, calendar_id, site_events):
                 log.info(f"  🗑 Removido: {existing.get('summary', '')}")
     else:
         log.warning("Lista de eventos vazia — remoções ignoradas por segurança.")
-
-    if new_names:
-        add_to_inscritas(new_names)
 
     log.info(f"\nResumo: {len(created_list)} criados, {len(changed_list)} alterados, {len(deleted_list)} removidos.")
     send_notification(created_list, changed_list, deleted_list)
